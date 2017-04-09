@@ -4,6 +4,7 @@ import time
 import copy
 import random
 import pickle
+import os.path
 # conda install pyopengl
 # conda install -c conda-forge freeglut
 # or: brew install freeglut
@@ -197,7 +198,7 @@ def style0_color3f(r,g,b):
 	return (r, g, b)
 def style1_color3f(r,g,b):
 	return (1.0-r, 1.0-g, 1.0-b)
-style_color3f = style0_color3f
+style_color3f = style1_color3f
 def style_glColor3f(r,g,b):
 	glColor3f(*style_color3f(r,g,b))
 #
@@ -443,6 +444,47 @@ def btree_size(tree):
 	return btree_node_size(tree['root']) if tree['root'] is not None else 0
 #
 g_scene = None
+def do_display_scene():
+	scene = g_scene
+	def load_lrn_file(fpath, ld_scale = 1.0/1000.0):
+		data = {'pos':None}
+		with open(fpath) as fi:
+			lhead = None
+			for line in fi.readlines():
+				line = line.strip()
+				if lhead:
+					if lhead == 'pos.x':
+						data['pos'] = [0,0]
+						data['pos'][0] = float(line)*ld_scale
+					elif lhead == 'pos.y':
+						data['pos'][1] = float(line)*ld_scale
+					lhead = None
+				else:
+					lhead = line
+		return data
+	def handle_load():
+		if 'path' not in scene:
+			path = sys_argv_get(['-path'], '')
+			lrn_path = os.path.join(path, 'state')
+			if len(path):
+				path = os.path.expanduser(path)
+				scene['path'] = path; scene['lrn_path'] = lrn_path;
+				media_files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
+				lrn_files = [f for f in os.listdir(lrn_path) if os.path.isfile(os.path.join(lrn_path, f))]
+				#print media_files, lrn_files
+				scene['lrn_data'] = {}
+				for lf in lrn_files:
+					lf_data = load_lrn_file(os.path.join(lrn_path, lf))
+					scene['lrn_data'][lf] = lf_data
+			else:
+				scene['path'] = path
+		ld_test_poly = []
+		for ld in scene['lrn_data'].values():
+			if ld['pos']:
+				ld_test_poly.append( ld['pos'] )
+		if len(ld_test_poly):
+			point_poly(ld_test_poly, k_red)
+	handle_load()
 def do_display():
 	global g_scene
 	if g_scene is None:
@@ -480,12 +522,13 @@ def do_display():
 		track =	scene['mouse']['track_pts']
 		if scene['mouse']['tracking']:
 			if g_mouseFocus and g_mouse[0] is not None:
-				if v2_dist(scene.get('mouse_last', g_mouse), g_mouse) > 3.0 * k_cm:
+				m_scl = 1.0/600.0
+				if v2_dist(scene.get('mouse_last', g_mouse), g_mouse) > 3.0 * m_scl:
 					track.append(screen_to_draw(g_mouse))
 				if len(track) > scene['mouse']['max_track_pts']:
 					scene['mouse']['track_pts'] = track[1:]
 				scene['mouse_last'] = g_mouse
-				trace_poly( m2_mulp_a(m2_rigid(screen_to_draw(g_mouse), 0), make_wh_poly([k_cm*5, k_cm*5])) )
+				trace_poly( m2_mulp_a(m2_rigid(screen_to_draw(g_mouse), 0), make_wh_poly([m_scl*5, m_scl*5])) )
 		else:
 			if len(track) >= 2:
 				scene['rig']['path'] = copy.copy(track)
@@ -517,7 +560,7 @@ def do_display():
 		draw_strings(lines, -1.0*g_zoom*disp_aspect()+g_offset[0], 1.0*g_zoom+g_offset[1], k_white)
 	def handle_scene_offset():
 		global g_offset
-		drag = g_drag.get(1, None)
+		drag = g_drag.get(0, None)
 		if drag is not None and drag['active']:
 			if scene['scene_offset']['active'] == False:
 				scene['scene_offset']['orig_offset'] = g_offset
@@ -530,11 +573,14 @@ def do_display():
 			g_offset = v2_z()	#
 	def draw_design_grid(unit):
 		draw_lines([v2_z(), v2_muls(k_e_1, unit), v2_z(), v2_muls(k_e_2, unit)], k_lgray)
+	do_display_scene()
 	draw_design_grid(1.0/5.0)
-	track_mouse()
+	if False:
+		track_mouse()
 	if g_dbg:
 		dbg_mouse()
 	handle_draw_strings()
+	handle_scene_offset()
 	#
 	for once_k in scene['once'].keys():
 		scene['once'][once_k] = False
