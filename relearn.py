@@ -5,12 +5,17 @@ import copy
 import random
 import pickle
 import os.path
+import numpy
+import Image
 # conda install pyopengl
 # conda install -c conda-forge freeglut
 # or: brew install freeglut
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.GLUT import *
+
+#from OpenGL.GL.ARB.texture_non_power_of_two import *
+#print 'ARB', glInitTextureNonPowerOfTwoARB()
 #
 g_dbg = '-dbg' in sys.argv
 #
@@ -462,6 +467,46 @@ def do_display_scene():
 				else:
 					lhead = line
 		return data
+	def load_media_file(fpath):
+		data = { 'type':'' }
+		if os.path.splitext(fpath)[1] == '.png':
+			data['type'] = 'png'
+			data['fpath'] = fpath
+		return data
+	def update_media_texture(md):
+		if md['type'] == 'png':
+			if 'tex' not in md:
+				md['tex'] = {}
+				glEnable( GL_TEXTURE_2D )
+				md['tex']['tex'] = glGenTextures(1)
+				glPixelStorei(GL_UNPACK_ALIGNMENT,1)
+				glBindTexture(GL_TEXTURE_2D, md['tex']['tex'])
+				#glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
+				glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP)
+				glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP)
+				glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+				glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+				print 'Loading [{}]..'.format(md['fpath']),
+				if True:
+					im = Image.open(md['fpath'])#.transpose( Image.FLIP_TOP_BOTTOM );
+					im = im.convert('RGB')
+					scl = 1.0
+					if scl != 1.0:
+						im = im.resize((im.size[0]*scl, im.size[1]*scl), Image.ANTIALIAS)
+					owh = [im.size[0],im.size[1]]
+					nwh = owh; nwh = [2**(math.frexp(x)[1]) for x in nwh];
+					nimg = Image.new(im.mode, (nwh[0],nwh[1]))
+					nimg.paste(im, (0,0,0+im.size[0],0+im.size[1]))
+					#nimg.save('test.png')
+					im = nimg
+					imdata = numpy.fromstring(im.tostring(), numpy.uint8)
+					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, im.size[0], im.size[1], 0, GL_RGB, GL_UNSIGNED_BYTE, imdata)
+					md['tex']['wh'] = owh
+					md['tex']['raw_wh'] = [im.size[0],im.size[1]]
+					md['tex']['tcoord'] = [float(x)/y for (x,y) in zip(md['tex']['wh'], md['tex']['raw_wh'])]
+					print md['tex']['tcoord']
+			else:
+				pass
 	def handle_load():
 		if 'path' not in scene:
 			path = sys_argv_get(['-path'], '')
@@ -476,6 +521,16 @@ def do_display_scene():
 				for lf in lrn_files:
 					lf_data = load_lrn_file(os.path.join(lrn_path, lf))
 					scene['lrn_data'][lf] = lf_data
+			scene['media_data'] = {}
+			ccc = 3; cc=0;
+			for mf in media_files:
+				mf_data = load_media_file(os.path.join(path, mf))
+				scene['media_data'][mf] = mf_data
+				update_media_texture(mf_data)
+				if mf_data['type'] == 'png':
+					cc = cc+1
+					if cc > 0 and False:
+						break
 			else:
 				scene['path'] = path
 		ld_test_poly = []
@@ -484,6 +539,28 @@ def do_display_scene():
 				ld_test_poly.append( ld['pos'] )
 		if len(ld_test_poly):
 			point_poly(ld_test_poly, k_red)
+		ccc = 1; cc=0;
+		glEnable(GL_TEXTURE_2D)
+		for md in scene['media_data'].values():
+			if md['type'] == 'png':
+				cc = cc+1
+				if cc == ccc or True:
+					wh = [x for x in size_to_draw(md['tex']['wh'])] # v2_muls(md['tex']['wh'], 1.0/1000.0)
+					tcoord = md['tex']['tcoord']
+					glBindTexture(GL_TEXTURE_2D, md['tex']['tex'])
+					glColor3f(1, 1, 1)
+					# draw a quad
+					glBegin(GL_QUADS)
+					glTexCoord2f(0*tcoord[0], 1*tcoord[1])
+					glVertex2f(0*wh[0], 1*wh[1])
+					glTexCoord2f(0*tcoord[0], 0*tcoord[1])
+					glVertex2f(0*wh[0], 0*wh[1])
+					glTexCoord2f(1*tcoord[0], 0*tcoord[1])
+					glVertex2f(1*wh[0], 0*wh[1])
+					glTexCoord2f(1*tcoord[0], 1*tcoord[1])
+					glVertex2f(1*wh[0], 1*wh[1])
+					glEnd()
+		glDisable(GL_TEXTURE_2D)
 	handle_load()
 def do_display():
 	global g_scene
