@@ -190,6 +190,7 @@ g_wh = [1024, 768]; g_wh = [800,600];
 g_side_wh = [int(x) for x in v2_muls(g_wh, 0.5)]
 def disp_aspect(wh = None):  wh = wh if wh is not None else g_wh; return float(wh[0])/float(wh[1]);
 g_zoom = 1.0
+g_glob_zoom = 600.0
 g_offset = [0.0, 0.0]
 #
 def rgb_to_f(rgb):
@@ -360,7 +361,7 @@ def display(w, h):
 		glViewport(0, 0, w, h)
 		glMatrixMode(GL_PROJECTION)
 		glLoadIdentity()
-		glOrtho(-1*aspect*g_zoom+g_offset[0], 1*aspect*g_zoom+g_offset[0], -1*g_zoom+g_offset[1], 1*g_zoom+g_offset[1], -1, 1)
+		glOrtho(-1*aspect*g_glob_zoom*g_zoom+g_offset[0], 1*aspect*g_glob_zoom*g_zoom+g_offset[0], -1*g_glob_zoom*g_zoom+g_offset[1], 1*g_glob_zoom*g_zoom+g_offset[1], -1, 1)
 		#
 		glMatrixMode(GL_MODELVIEW);
 		glLoadIdentity()
@@ -451,7 +452,7 @@ def btree_size(tree):
 g_scene = None
 def do_display_scene():
 	scene = g_scene
-	def load_lrn_file(fpath, ld_scale = 1.0/1000.0):
+	def load_lrn_file(fpath, ld_scl):
 		data = {'pos':None}
 		with open(fpath) as fi:
 			lhead = None
@@ -460,20 +461,20 @@ def do_display_scene():
 				if lhead:
 					if lhead == 'pos.x':
 						data['pos'] = [0,0]
-						data['pos'][0] = float(line)*ld_scale
+						data['pos'][0] = float(line)*ld_scl
 					elif lhead == 'pos.y':
-						data['pos'][1] = float(line)*ld_scale
+						data['pos'][1] = float(line)*ld_scl
 					lhead = None
 				else:
 					lhead = line
 		return data
-	def load_media_file(fpath):
+	def load_media_file(fpath, ld_scl):
 		data = { 'type':'' }
 		if os.path.splitext(fpath)[1] == '.png':
 			data['type'] = 'png'
 			data['fpath'] = fpath
 		return data
-	def update_media_texture(md):
+	def update_media_texture(md, ld_scl):
 		if md['type'] == 'png':
 			if 'tex' not in md:
 				md['tex'] = {}
@@ -481,18 +482,17 @@ def do_display_scene():
 				md['tex']['tex'] = glGenTextures(1)
 				glPixelStorei(GL_UNPACK_ALIGNMENT,1)
 				glBindTexture(GL_TEXTURE_2D, md['tex']['tex'])
-				#glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE)
 				glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP)
 				glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP)
 				glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 				glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-				print 'Loading [{}]..'.format(md['fpath']),
+				sys.stdout.write('Loading [{}]..'.format(md['fpath'])); sys.stdout.flush();
 				if True:
-					im = Image.open(md['fpath'])#.transpose( Image.FLIP_TOP_BOTTOM );
+					im = Image.open(md['fpath']).transpose( Image.FLIP_TOP_BOTTOM );
 					im = im.convert('RGB')
-					scl = 1.0
+					scl = ld_scl
 					if scl != 1.0:
-						im = im.resize((im.size[0]*scl, im.size[1]*scl), Image.ANTIALIAS)
+						im = im.resize(( int(im.size[0]*scl), int(im.size[1]*scl)), Image.ANTIALIAS)
 					owh = [im.size[0],im.size[1]]
 					nwh = owh; nwh = [2**(math.frexp(x)[1]) for x in nwh];
 					nimg = Image.new(im.mode, (nwh[0],nwh[1]))
@@ -501,10 +501,11 @@ def do_display_scene():
 					im = nimg
 					imdata = numpy.fromstring(im.tostring(), numpy.uint8)
 					glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, im.size[0], im.size[1], 0, GL_RGB, GL_UNSIGNED_BYTE, imdata)
+					glDisable( GL_TEXTURE_2D )
 					md['tex']['wh'] = owh
 					md['tex']['raw_wh'] = [im.size[0],im.size[1]]
 					md['tex']['tcoord'] = [float(x)/y for (x,y) in zip(md['tex']['wh'], md['tex']['raw_wh'])]
-					print md['tex']['tcoord']
+				print '.'
 			else:
 				pass
 	def handle_load():
@@ -514,23 +515,21 @@ def do_display_scene():
 			if len(path):
 				path = os.path.expanduser(path)
 				scene['path'] = path; scene['lrn_path'] = lrn_path;
+				scene['ld_scl'] = 1.0
 				media_files = [f for f in os.listdir(path) if os.path.isfile(os.path.join(path, f))]
-				lrn_files = [f for f in os.listdir(lrn_path) if os.path.isfile(os.path.join(lrn_path, f))]
+				lrn_files = [f for f in os.listdir(lrn_path) if os.path.isfile(os.path.join(lrn_path, f)) and os.path.splitext(f)[1] == '.lrn']
 				#print media_files, lrn_files
 				scene['lrn_data'] = {}
 				for lf in lrn_files:
-					lf_data = load_lrn_file(os.path.join(lrn_path, lf))
+					lf_data = load_lrn_file(os.path.join(lrn_path, lf), 1.0)
 					scene['lrn_data'][lf] = lf_data
-			scene['media_data'] = {}
-			ccc = 3; cc=0;
-			for mf in media_files:
-				mf_data = load_media_file(os.path.join(path, mf))
-				scene['media_data'][mf] = mf_data
-				update_media_texture(mf_data)
-				if mf_data['type'] == 'png':
-					cc = cc+1
-					if cc > 0 and False:
-						break
+				scene['media_data'] = {}
+				for mf in media_files:
+					mf_data = load_media_file(os.path.join(path, mf), 1.0)
+					scene['media_data'][mf] = mf_data
+					update_media_texture(mf_data, 1.0)
+					mf_lf = '_'+mf+'.lrn'
+					mf_data['lf'] = scene['lrn_data'].get(mf_lf, None)
 			else:
 				scene['path'] = path
 		ld_test_poly = []
@@ -539,28 +538,28 @@ def do_display_scene():
 				ld_test_poly.append( ld['pos'] )
 		if len(ld_test_poly):
 			point_poly(ld_test_poly, k_red)
-		ccc = 1; cc=0;
-		glEnable(GL_TEXTURE_2D)
-		for md in scene['media_data'].values():
-			if md['type'] == 'png':
-				cc = cc+1
-				if cc == ccc or True:
-					wh = [x for x in size_to_draw(md['tex']['wh'])] # v2_muls(md['tex']['wh'], 1.0/1000.0)
+		if True:
+			glEnable(GL_TEXTURE_2D)
+			for md in scene['media_data'].values():
+				if md['type'] == 'png':
+					wh = [x for x in size_to_draw(md['tex']['wh'])] #
+					wh = v2_muls(md['tex']['wh'], 1.0)
 					tcoord = md['tex']['tcoord']
 					glBindTexture(GL_TEXTURE_2D, md['tex']['tex'])
 					glColor3f(1, 1, 1)
+					pos = v2_z() if md['lf'] is None else md['lf']['pos']
 					# draw a quad
 					glBegin(GL_QUADS)
 					glTexCoord2f(0*tcoord[0], 1*tcoord[1])
-					glVertex2f(0*wh[0], 1*wh[1])
+					glVertex2f(pos[0]+0*wh[0], pos[1]+1*wh[1])
 					glTexCoord2f(0*tcoord[0], 0*tcoord[1])
-					glVertex2f(0*wh[0], 0*wh[1])
+					glVertex2f(pos[0]+0*wh[0], pos[1]+0*wh[1])
 					glTexCoord2f(1*tcoord[0], 0*tcoord[1])
-					glVertex2f(1*wh[0], 0*wh[1])
+					glVertex2f(pos[0]+1*wh[0], pos[1]+0*wh[1])
 					glTexCoord2f(1*tcoord[0], 1*tcoord[1])
-					glVertex2f(1*wh[0], 1*wh[1])
+					glVertex2f(pos[0]+1*wh[0], pos[1]+1*wh[1])
 					glEnd()
-		glDisable(GL_TEXTURE_2D)
+			glDisable(GL_TEXTURE_2D)
 	handle_load()
 def do_display():
 	global g_scene
@@ -616,7 +615,7 @@ def do_display():
 		global g_zoom
 		zd = 1.0
 		if any([x in g_keys for x in ['-','=']]):
-			zd = 3.0/4.0 if '-' in g_keys else (4.0/3.0 if '=' in g_keys else 1.0)
+			zd = 3.0/4.0 if '=' in g_keys else (4.0/3.0 if '-' in g_keys else 1.0)
 			g_zoom = m_min(m_max(g_zoom * zd, 0.001), 100)
 	def handle_input_scroll():
 		def do_generic_scroll(precision, zmin, zmax, scroll_key):
@@ -634,7 +633,7 @@ def do_display():
 	def handle_draw_strings():
 		lines = []
 		lines.append( 'scroll: [{}:{}]'.format(scene['scroll']['modes'][scene['scroll']['mode']], scene['scroll'].get('value','') ) )
-		draw_strings(lines, -1.0*g_zoom*disp_aspect()+g_offset[0], 1.0*g_zoom+g_offset[1], k_white)
+		draw_strings(lines, -1.0*g_glob_zoom*g_zoom*disp_aspect()+g_offset[0], 1.0*g_glob_zoom*g_zoom+g_offset[1], k_white)
 	def handle_scene_offset():
 		global g_offset
 		drag = g_drag.get(0, None)
