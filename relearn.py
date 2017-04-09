@@ -11,11 +11,6 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.GLUT import *
 #
-try:
-	import Quartz
-except:
-	Quartz = None
-#
 g_dbg = '-dbg' in sys.argv
 #
 def sys_argv_has(keys):
@@ -345,16 +340,6 @@ def main_realtime():
 	#
 	glutIdleFunc(glutPostRedisplay)
 	glutMouseFunc(handleMouseAct)
-	try:
-		glutMouseWheelFunc(handleMouseWheel)
-	except:
-		if Quartz:
-			def QuartzWheelHandler(p, t, e, c):
-				print e
-			#print 'XXX'
-			#https://github.com/pushrax/osxmmkeys/blob/5391d7b8d2f3d0defa2495445ddc858dfee4cb97/osxmmkeys/tap.py
-			#tap = Quartz.CGEventTapCreate(Quartz.kCGHIDEventTap, Quartz.kCGHeadInsertEventTap, Quartz.kCGEventTapOptionListenOnly, Quartz.CGEventMaskBit(Quartz.kCGEventLeftMouseDown), QuartzWheelHandler, None)
-			#Quartz.CGEventTapEnable(tap, True)
 	glutPassiveMotionFunc(handleMousePassiveMove)
 	glutMotionFunc(handleMouseMove)
 	glutEntryFunc(handleMouseEntry)
@@ -510,28 +495,9 @@ def do_display():
 	def handle_scene_zoom():
 		global g_zoom
 		zd = 1.0
-		if True:
-			if any([x in g_keys for x in ['-','=']]):
-				zd = 3.0/4.0 if '-' in g_keys else (4.0/3.0 if '=' in g_keys else 1.0)
-				g_zoom = m_min(m_max(g_zoom * zd, 0.001), 100)
-		if False:
-			if any([x in g_buttons for x in [3,4]]):
-				zd = 3.0/4.0 if 3 in g_buttons else (4.0/3.0 if 4 in g_buttons else 1.0)
-				g_zoom = m_min(m_max(g_zoom * zd, 0.001), 100)
-			else:
-				drag = g_drag.get(0, None)
-				if drag is not None and drag['active'] and 'shift' in g_drag[0]['mod']:
-					pts = drag['wpts']
-					zd = ( 2.0 * (0.5 + (float((pts[1][1] - pts[0][1])) / g_wh[1])) )
-					#zd = m_interp(1.0/4.0, 4.0 / 2.0, zdraw)
-					#print zdraw,zd
-					if scene['zoom_offset']['active'] == False:
-						scene['zoom_offset']['orig_zoom'] = g_zoom
-						scene['zoom_offset']['active'] = True
-					else:
-						g_zoom = m_min(m_max(scene['zoom_offset']['orig_zoom'] * zd, 0.001), 100)
-				else:
-					scene['zoom_offset']['active'] = False
+		if any([x in g_keys for x in ['-','=']]):
+			zd = 3.0/4.0 if '-' in g_keys else (4.0/3.0 if '=' in g_keys else 1.0)
+			g_zoom = m_min(m_max(g_zoom * zd, 0.001), 100)
 	def handle_input_scroll():
 		def do_generic_scroll(precision, zmin, zmax, scroll_key):
 			zd = precision if 3 in g_buttons else (1.0/precision if 4 in g_buttons else 1.0)
