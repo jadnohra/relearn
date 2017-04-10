@@ -7,15 +7,13 @@ import pickle
 import os.path
 import numpy
 import Image
+import traceback
 # conda install pyopengl
 # conda install -c conda-forge freeglut
 # or: brew install freeglut
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.GLUT import *
-
-#from OpenGL.GL.ARB.texture_non_power_of_two import *
-#print 'ARB', glInitTextureNonPowerOfTwoARB()
 #
 g_dbg = '-dbg' in sys.argv
 #
@@ -383,8 +381,18 @@ def display(w, h):
 			g_fps_t0 = t1; g_fps_frames = 0;
 		#print (t1-t0)
 	start_display(w, h)
-	do_display()
+	try:
+		do_display()
+	except SystemExit:
+		sys.exit(0)
+	except:
+		traceback.print_exc()
+		if glutLeaveMainLoop:
+			glutLeaveMainLoop()
+		sys.exit(0)
+		return
 	end_display()
+g_btree_dbg = False
 def aabb_inflate(vol, rad):
 	return [vol[0]-rad, vol[1]-rad, vol[2]+rad, vol[3]+rad]
 def aabb_size(vol):
@@ -408,6 +416,8 @@ def points_to_aabb(pts):
 	return reduce(lambda x, y: aabb_union(x,y), [point_to_aabb(x) for x in pts])
 def btree_intersecting_leaves(tree, volume):
 	def btree_intersects(func_vol_size, func_vol_inter, node, vol, inter_leaves):
+		if g_btree_dbg:
+			print '{} ({},{}) x {} = {}'.format(node['vol'], 'l' if 'l' in node else '', 'r' if 'r' in node else '', vol, func_vol_inter(node['vol'], vol) )
 		if func_vol_size(func_vol_inter(node['vol'], vol)) > 0:
 			if node['is_leaf']:
 				inter_leaves.append(node)
@@ -515,6 +525,13 @@ def do_display_scene():
 			else:
 				pass
 	def handle_load():
+		def init_voltree():
+			scene['voltree'] = make_aabb_btree()
+			for md in scene['media_data'].values():
+				if md['lf'] and md.get('tex', {}).get('wh', None) is not None:
+					pts = [v2_add(md['lf']['pos'], v2_muls(md['tex']['wh'], md['lf']['scale'] * x)) for x in [-0.5, 0.5]]
+					md['lf']['vol'] = points_to_aabb(pts)
+					btree_insert(scene['voltree'], md['lf']['vol'], md)
 		if 'path' not in scene:
 			path = sys_argv_get(['-path'], '')
 			lrn_path = os.path.join(path, 'state')
@@ -537,27 +554,49 @@ def do_display_scene():
 					update_media_texture(mf_data)
 			else:
 				scene['path'] = path
+		init_voltree()
+	def handle_input():
+		global g_btree_dbg
+		if 0 in g_buttons:
+			if scene.get('focus_md', None):
+				scene['focus_md']['focus'] = False
+				scene['focus_md'] = None
+			mpt = screen_to_draw(g_buttons[0]['wpt'])
+			inter = btree_intersecting_leaves(scene['voltree'], aabb_inflate(point_to_aabb(mpt),1.0))
+			if len(inter):
+				scene['focus_md'] = inter[0]['data']
+				inter[0]['data']['focus'] = True
+	def handle_display():
+		def display_md_quad(md, pos, wh):
+				tcoord = md['tex']['tcoord']
+				glBindTexture(GL_TEXTURE_2D, md['tex']['tex'])
+				glBegin(GL_QUADS)
+				glTexCoord2f(0*tcoord[0], 1*tcoord[1])
+				glVertex2f(pos[0]-0.5*wh[0], pos[1]+0.5*wh[1])
+				glTexCoord2f(0*tcoord[0], 0*tcoord[1])
+				glVertex2f(pos[0]-0.5*wh[0], pos[1]-0.5*wh[1])
+				glTexCoord2f(1*tcoord[0], 0*tcoord[1])
+				glVertex2f(pos[0]+0.5*wh[0], pos[1]-0.5*wh[1])
+				glTexCoord2f(1*tcoord[0], 1*tcoord[1])
+				glVertex2f(pos[0]+0.5*wh[0], pos[1]+0.5*wh[1])
+				glEnd()
+		def display_md(md):
+			if md['type'] == 'png' and md['lf']:
+				wh = v2_muls(md['tex']['wh'], md['lf']['scale'])
+				pos = md['lf']['pos']
+				display_md_quad(md, pos, wh)
+		def display_md_focus(md):
+			if md['type'] == 'png' and md['lf']:
+				wh = v2_mul(size_to_draw(md['tex']['wh']), [1.0, -1.0])
+				pos = screen_to_draw(v2_muls(g_wh, 0.5))
+				display_md_quad(md, pos, wh)
 		if True:
+			glColor3f(1, 1, 1)
 			glEnable(GL_TEXTURE_2D)
 			for md in scene['media_data'].values():
-				if md['type'] == 'png' and md['lf']:
-					#wh = [x for x in size_to_draw(md['tex']['wh'])] #
-					wh = v2_muls(md['tex']['wh'], md['lf']['scale'])
-					tcoord = md['tex']['tcoord']
-					glBindTexture(GL_TEXTURE_2D, md['tex']['tex'])
-					glColor3f(1, 1, 1)
-					pos = md['lf']['pos']
-					# draw a quad
-					glBegin(GL_QUADS)
-					glTexCoord2f(0*tcoord[0], 1*tcoord[1])
-					glVertex2f(pos[0]-0.5*wh[0], pos[1]+0.5*wh[1])
-					glTexCoord2f(0*tcoord[0], 0*tcoord[1])
-					glVertex2f(pos[0]-0.5*wh[0], pos[1]-0.5*wh[1])
-					glTexCoord2f(1*tcoord[0], 0*tcoord[1])
-					glVertex2f(pos[0]+0.5*wh[0], pos[1]-0.5*wh[1])
-					glTexCoord2f(1*tcoord[0], 1*tcoord[1])
-					glVertex2f(pos[0]+0.5*wh[0], pos[1]+0.5*wh[1])
-					glEnd()
+				display_md(md)
+			if scene.get('focus_md', None):
+				display_md_focus(scene['focus_md'])
 			glDisable(GL_TEXTURE_2D)
 		if True:
 			ld_test_poly = []
@@ -567,6 +606,8 @@ def do_display_scene():
 			if len(ld_test_poly):
 				point_poly(ld_test_poly, k_red)
 	handle_load()
+	handle_input()
+	handle_display()
 def do_display():
 	global g_scene
 	if g_scene is None:
