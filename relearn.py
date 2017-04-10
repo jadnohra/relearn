@@ -556,16 +556,16 @@ def do_display_scene():
 				scene['path'] = path
 		init_voltree()
 	def handle_input():
-		global g_btree_dbg
 		if 0 in g_buttons:
-			if scene.get('focus_md', None):
-				scene['focus_md']['focus'] = False
-				scene['focus_md'] = None
 			mpt = screen_to_draw(g_buttons[0]['wpt'])
 			inter = btree_intersecting_leaves(scene['voltree'], aabb_inflate(point_to_aabb(mpt),1.0))
 			if len(inter):
-				scene['focus_md'] = inter[0]['data']
+				scene['focus'] = { 'md':inter[0]['data'], 'wpt':g_mouse }
 				inter[0]['data']['focus'] = True
+		else:
+			if scene.get('focus', None) and v2_eq(scene['focus']['wpt'], g_mouse) == False:
+				scene['focus']['md']['focus'] = False
+				scene['focus'] = None
 	def handle_display():
 		def display_md_quad(md, pos, wh):
 				tcoord = md['tex']['tcoord']
@@ -595,8 +595,8 @@ def do_display_scene():
 			glEnable(GL_TEXTURE_2D)
 			for md in scene['media_data'].values():
 				display_md(md)
-			if scene.get('focus_md', None):
-				display_md_focus(scene['focus_md'])
+			if scene.get('focus', None):
+				display_md_focus(scene['focus']['md'])
 			glDisable(GL_TEXTURE_2D)
 		if True:
 			ld_test_poly = []
