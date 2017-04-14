@@ -1,6 +1,6 @@
 import sys
 import os
-import gtk
+import gtk #http://faq.pygtk.org
 import math
 import cairo
 #
@@ -93,20 +93,21 @@ def scene_load(scene):
 		else:
 			scene['path'] = path
 def display_scene(scene, cr, wh):
-	def display_md(md, scl, wh):
+	def display_md(md, off, scl, wh):
 		if md['type'] == 'png' and md['lf']:
 			pos = md['lf']['pos']
 			cr.save()
-			cr.translate(wh[0]/2+pos[0]*scl, wh[1] - (wh[1]/2+pos[1]*scl))
+			cr.translate(wh[0]/2+off[0]+pos[0]*scl, wh[1] - (wh[1]/2+off[1]+pos[1]*scl))
 			cr.scale(scl, scl)
 			cr.set_source_surface(md['surf']['surf'], 0, 0)
 			cr.paint()
 			cr.restore()
 	scl = 1.0 / scene['zoom']
+	off = scene['offset']
 	for md in scene['media_data'].values():
-		display_md(md, scl, wh)
+		display_md(md, off, scl, wh)
 def make_scene():
-	return {'dbg_fs':sys_argv_has(['-dbg_fs']), 'zoom':10.0}
+	return {'dbg_fs':sys_argv_has(['-dbg_fs']), 'zoom':10.0, 'offset':[0.0,0.0], 'input':{}}
 
 class PyApp(gtk.Window):
 		def __init__(self):
@@ -129,16 +130,27 @@ class PyApp(gtk.Window):
 				darea.connect("expose-event", self.expose)
 				self.add(darea)
 
-				darea.connect("button_press_event", self.button_press_event)
-				self.connect("key_press_event", self.key_press_event)
+				darea.connect("button-press-event", self.button_press_event)
+				darea.connect("button-release-event", self.button_release_event)
+				darea.connect('motion-notify-event', self.mouse_motion_event)
+				self.connect("key-press-event", self.key_press_event)
+				self.connect('scroll_event', self.button_scroll_event)
 				darea.set_events(gtk.gdk.EXPOSURE_MASK|gtk.gdk.LEAVE_NOTIFY_MASK|
-					gtk.gdk.BUTTON_PRESS_MASK | gtk.gdk.POINTER_MOTION_MASK| gtk.gdk.POINTER_MOTION_HINT_MASK|
-					gtk.gdk.KEY_PRESS_MASK)
+					gtk.gdk.BUTTON_PRESS_MASK | gtk.gdk.BUTTON_RELEASE_MASK |
+					gtk.gdk.POINTER_MOTION_MASK| gtk.gdk.POINTER_MOTION_HINT_MASK|
+					gtk.gdk.KEY_PRESS_MASK |
+					gtk.gdk.SCROLL_MASK)
 
 				self.show_all()
+		def button_scroll_event(self, widget, event):
+			return True
 		def button_press_event(self, widget, event):
-			if event.button == 1:
-				self.queue_draw()
+			self.scene['input']['drag'] = {'from': [event.x, event.y], 'off_0': self.scene['offset']}
+			#if event.button == 1:
+			#	self.queue_draw()
+			return True
+		def button_release_event(self, widget, event):
+			self.scene['input']['drag'] = None
 			return True
 		def key_press_event(self, widget, event):
 			if event.keyval == gtk.keysyms.equal:
@@ -146,6 +158,16 @@ class PyApp(gtk.Window):
 				self.queue_draw()
 			elif event.keyval == gtk.keysyms.minus:
 				self.scene['zoom'] = 4.0/3.0 * self.scene['zoom']
+				self.queue_draw()
+			else:
+				return False
+			return True
+		def mouse_motion_event(self, widget, event):
+			drag = self.scene['input'].get('drag', None)
+			if drag is not None:
+				frm  = drag['from']; off_0 = drag['off_0'];
+				to = [event.x, event.y]
+				self.scene['offset'] = [off_0[0]+to[0]-frm[0], off_0[1]-(to[1]-frm[1])]
 				self.queue_draw()
 			return True
 		def expose(self, widget, event):
